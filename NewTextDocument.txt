@@ -1,0 +1,137 @@
+package Demo;
+
+import static java.lang.Thread.sleep;
+import java.util.concurrent.*;
+import java.util.*;
+
+class PostOffice extends Thread {
+    public static Semaphore customer_capacity=new Semaphore(10);
+    public static Semaphore workers=new Semaphore(3);
+    public static Semaphore mutex1=new Semaphore(1);
+    public static Semaphore mutex2=new Semaphore(1);
+    public static Semaphore scale=new Semaphore(1);
+    public static Semaphore cust_ready=new Semaphore(0);
+    public static Semaphore leave_post_office=new Semaphore(0);
+    public static Semaphore[] finished=new Semaphore[50];
+    static {
+        for(int i=0; i<50; i++) finished[i]=new Semaphore(0);
+    }
+    public static int customerID=0;
+    public static int workerID=0;  
+    public static Queue<Integer> queue1=new LinkedList<Integer>();
+    public static Queue<Integer> queue2=new LinkedList<Integer>();
+    
+    public void run(){
+        final int workersize=3;
+        final int customersize=50;
+        Thread customerThread[]=new Thread[customersize];
+        Thread workerThread[]=new Thread[workersize];
+        for(int i=0; i<workersize; i++){
+            customerThread[i] =new Thread(new Worker(workerID));
+            workerID++;
+        }
+        for(int i=0; i<customersize; i++){
+            customerThread[i] =new Thread(new Customer(customerID));
+            customerThread[i].start();
+            customerID++;
+        }
+       
+        
+    }
+    public static void main(String[] args){
+        PostOffice postoffice=new PostOffice();
+        postoffice.start();
+    }
+
+
+    private class Customer implements Runnable{
+        private final int id;
+
+        Customer(int id){
+        this.id=id;
+        System.out.println("Customer "+id+" created");
+    }
+
+        @Override
+        public void run() {
+            try {
+                customer_capacity.acquire();
+                enter_post_office();
+                workers.acquire();
+                mutex1.acquire();
+                queue1.add(id);
+                queue2.add(assignTask());
+                mutex1.release();
+                cust_ready.release();
+                finished[id].acquire();
+                leave_post_office.release();
+                leavePostOffice();
+                customer_capacity.release();
+                
+            } catch (InterruptedException ex) {}
+            
+        }
+
+        private void enter_post_office(){
+            System.out.println("Customer "+id+" enters post office");
+        }
+        
+        private int assignTask(){
+            int taskchoice=(int)(Math.random()*3 + 1); 
+            return taskchoice;
+        }
+        
+        private void leavePostOffice(){
+        	System.out.println("Customer "+id+"left the post office.");
+        }
+    }
+
+    private class Worker implements Runnable{
+        private int id;
+        private int p_cust;
+        private int tasknumber; 
+
+        Worker(int id){
+            this.id=id;
+            System.out.println("Postal Worker "+id+" created");
+        }
+        
+        private void task(){
+            try {
+                switch(tasknumber){
+                    case 1:
+                       sleep(60000);
+                       break;
+                    case 2:
+                       sleep(90000);
+                       break;
+                    case 3:
+                       sleep(60000);
+                       scale.acquire();
+                       sleep(60000);
+                       scale.release();
+                       break;
+                } 
+            }catch (InterruptedException ex) {}           
+        }
+        
+        @Override
+        public void run() {
+            try{
+	            while(true){
+	                cust_ready.acquire();
+	                mutex1.acquire();
+	                p_cust=queue1.remove();
+	                tasknumber=queue2.remove();
+	                mutex1.release();
+	                task();
+	                finished[p_cust].release();
+	                leave_post_office.acquire();
+	                workers.release();
+	            }
+            }catch(InterruptedException ex) {} 
+        }
+
+    }
+
+}
